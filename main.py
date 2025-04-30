@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException, Query
 from typing import Optional
-import requests
 from datetime import datetime, timedelta
+import httpx
 
 app = FastAPI()
 
@@ -14,7 +14,10 @@ USERNAME = "svcpowerbi02@polarisind.com"
 PASSWORD = "QYuqHUusdkByNT"
 RESOURCE = "https://analysis.windows.net/powerbi/api"
 
-def get_access_token():
+async def get_access_token():
+    """
+    Fetches an access token from the Azure AD authentication endpoint.
+    """
     payload = {
         'grant_type': 'password',
         'client_id': CLIENT_ID,
@@ -23,15 +26,16 @@ def get_access_token():
         'password': PASSWORD,
         'resource': RESOURCE
     }
-    response = requests.post(TOKEN_URL, data=payload)
-    if response.status_code == 200:
-        return response.json().get("access_token")
-    else:
-        raise HTTPException(status_code=response.status_code, detail="Error obtaining access token")
+    async with httpx.AsyncClient() as client:
+        response = await client.post(TOKEN_URL, data=payload)
+        if response.status_code == 200:
+            return response.json().get("access_token")
+        else:
+            raise HTTPException(status_code=response.status_code, detail="Error obtaining access token")
 
 @app.get("/get-refresh-history")
-def get_refresh_history(
-    datasetId: str = Query(..., description="The ID of the power BI dataset"),
+async def get_refresh_history(
+    datasetId: str = Query(..., description="The ID of the Power BI dataset"),
     days: Optional[int] = Query(90, description="Number of days to filter refresh history (default: 90)")
 ):
     """
@@ -43,14 +47,15 @@ def get_refresh_history(
         start_date = end_date - timedelta(days=days)
 
         # Get access token
-        access_token = get_access_token()
+        access_token = await get_access_token()
 
         # Construct API request
         url = POWER_BI_API_URL.format(datasetId=datasetId)
         headers = {"Authorization": f"Bearer {access_token}"}
 
         # Call Power BI API
-        response = requests.get(url, headers=headers)
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, headers=headers)
         
         # Handle API errors
         if response.status_code != 200:
