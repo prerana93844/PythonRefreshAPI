@@ -6,7 +6,7 @@ import httpx
 app = FastAPI()
 
 POWER_BI_API_URL = "https://api.powerbi.com/v1.0/myorg/datasets/{datasetId}/refreshes"
-TOKEN_URL = "https://login.microsoftonline.com/85f78c4c-ad11-4735-9624-0b2c11611dff/oauth2/token"  # Replace {tenant_id} with your actual tenant ID
+TOKEN_URL = "https://login.microsoftonline.com/85f78c4c-ad11-4735-9624-0b2c11611dff/oauth2/token"  # Replace with your tenant ID
 
 CLIENT_ID = "d59456b1-5e3a-477c-ad13-8c29a79c85df"
 CLIENT_SECRET = "oNb9-P1Ajm-CEb.1GMmuHEu1K1nUI_6WqV"
@@ -14,10 +14,22 @@ USERNAME = "svcpowerbi02@polarisind.com"
 PASSWORD = "QYuqHUusdkByNT"
 RESOURCE = "https://analysis.windows.net/powerbi/api"
 
+# Token cache
+token_cache = {
+    "access_token": None,
+    "expiry": datetime.utcnow()
+}
+
 async def get_access_token():
     """
-    Fetches an access token from the Azure AD authentication endpoint.
+    Fetches and caches an access token from the Azure AD authentication endpoint.
     """
+    global token_cache
+    # Check if the cached token is still valid
+    if token_cache["access_token"] and token_cache["expiry"] > datetime.utcnow():
+        return token_cache["access_token"]
+
+    # Token request payload
     payload = {
         'grant_type': 'password',
         'client_id': CLIENT_ID,
@@ -26,10 +38,16 @@ async def get_access_token():
         'password': PASSWORD,
         'resource': RESOURCE
     }
+
+    # Fetch new token
     async with httpx.AsyncClient() as client:
         response = await client.post(TOKEN_URL, data=payload)
         if response.status_code == 200:
-            return response.json().get("access_token")
+            data = response.json()
+            expires_in=int(data.get("expires_in", 3600))
+            token_cache["access_token"] = data["access_token"]
+            token_cache["expiry"] = datetime.utcnow() + timedelta(seconds=expires_in)
+            return token_cache["access_token"]
         else:
             raise HTTPException(status_code=response.status_code, detail="Error obtaining access token")
 
